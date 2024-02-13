@@ -1,0 +1,11 @@
+case OTM8009A:
+	LCD_WR_REG(0x2A00); LCD_Write_DATA(x1>>8);
+  	LCD_WR_REG(0x2A01);	LCD_Write_DATA(x1&0XFF);
+  	LCD_WR_REG(0x2A02);	LCD_Write_DATA(x2>>8);
+  	LCD_WR_REG(0x2A03);	LCD_Write_DATA(x2&0XFF);
+	LCD_WR_REG(0x2B00);	LCD_Write_DATA(y1>>8);
+  	LCD_WR_REG(0x2B01);	LCD_Write_DATA(y1&0XFF);
+  	LCD_WR_REG(0x2B02);	LCD_Write_DATA(y2>>8);
+  	LCD_WR_REG(0x2B03);	LCD_Write_DATA(y2&0XFF);	
+	LCD_WR_REG(0x2C00);
+	break;
