@@ -63,6 +63,9 @@ long previousMillis;          // это для счетчиков
  extern byte ProfDate[10][34];
  #elif defined(ESP8266) || defined(ESP32)
  extern byte ProfDate[10][38];
+ #ifdef Enable_Bluetooth
+ char buf2[32];   //буфер вывода сообщений через сом порт
+ #endif
  #endif
 // extern char* AdrProfN[10];
 // -------секция ввода/вывода для ПЭВМ-----------------

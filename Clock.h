@@ -1,5 +1,8 @@
-
+#if defined(__AVR__)
 tmElements_t tm;
+#elif defined(ESP8266) || defined(ESP32)
+DateTime tm;
+#endif
 uint8_t hh, mm, ss;
 uint8_t hhR, mmR, ssR;
 uint8_t Shms[4], Stat;
@@ -14,7 +17,12 @@ int16_t x0, x1, yy0, yy1;
 uint16_t xpos; // x
 uint16_t ypos; // y
 bool Clock = false, Gt_Set = false, Svkl_L = false;  // Gt_Set=true;
+
+#if defined(__AVR__)
 static byte OldSek;
+#elif defined(ESP8266) || defined(ESP32)
+uint8_t OldSek;
+#endif
 // ---------------------------------------------------
 void SetPosClock () {
   xpos = -1 + myGLCD.getDisplayXSize() / 2;
@@ -54,8 +62,8 @@ void Zegar() {                      // рисуем циферблат
 }
 // --------------------------------------------
 bool TikTime () {
-   NoClock = true;
    if (!NoClock) {
+   #if defined(__AVR__)
      if (!RTC.read(tm)) {
         NoClock =!NoClock;
         ss = 0; mm = 0; hh = 0; OldSek = ss;
@@ -70,6 +78,23 @@ bool TikTime () {
         hh = tm.Hour;               // Advance hour 
         return(true);
         }
+     #elif defined(ESP8266) || defined(ESP32)
+        if (! DS1307_RTC.isrunning()) {
+        NoClock =!NoClock;
+        ss = 0; mm = 0; hh = 0; OldSek = ss;
+        prevClock = millis();
+        Serial.println(" не прочитались часы");      
+        }
+     else {
+        tm = DS1307_RTC.now();
+        if (OldSek == tm.second()) return(false);
+        ss = tm.second();             // Advance second
+        OldSek = ss;
+        mm = tm.minute();             // Advance minute
+        hh = tm.hour();               // Advance hour 
+        return(true);
+        }
+     #endif;  
    } 
      else {
      if ((millis() - prevClock) > 1000) {
@@ -80,14 +105,18 @@ bool TikTime () {
        return(true);    
        }    
       } else return(false);  
-     } 
+   }
 }
 // --------------------------------------------
 void ClockSet () {
+  #if defined(__AVR__)
    tm.Hour = hhR;
    tm.Minute = mmR;
     //tm.Second = Shms[2];
    RTC.write(tm);    // Записываем время в модуль:
+   #elif defined(ESP8266) || defined(ESP32)
+    DS1307_RTC.adjust(DateTime(2024, 01, 01, hhR, mmR, 0));
+   #endif
 }
 
 // --------------------------------------------

@@ -2,6 +2,14 @@
 
 //#define Debug
 
+#if defined(ESP8266) || defined(ESP32)
+//#define Enable_WiFi
+//#define Enable_Bluetooth
+
+const char* ssid = "ALF";
+const char* password = "";
+#endif
+
 #define SetAltPin             // Раскомментировать, если используются АЛЬТЕРНАТИВНЫЕ пины для подключения
 #define SetConnectPC        // Закоментировать, если вообще не надо связь с РС
 

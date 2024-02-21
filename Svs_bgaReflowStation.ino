@@ -8,22 +8,39 @@
 #include "Cl_do_btn_long.h"
 #include <Wire.h>
 #include <TimeLib.h>
+#include <DS1307RTC.h>
 #elif defined(ESP8266) || defined(ESP32)
-#include <TimeLib32.h>
 #include <TFT_CONV.h>
 #include "SPIFFS.h"
 #include "FS.h"
 #include <SPI.h>
-//include "HardwareSerial.h"
-#endif
-#include <DS1307RTC.h>
 #include <EEPROM.h>
+#include "RTClib.h"
+
+#ifdef Enable_Bluetooth
+#include "BluetoothSerial.h"
+#endif
+
+#ifdef Enable_WiFi
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncElegantOTA.h>
+#endif
+#endif
 
 #if defined(__AVR__)
  UTFT myGLCD(ILI9488_8, 38, 39, 40, 41);
 // UTFT myGLCD(ILI9481, 38, 39, 40, 41);
 #elif defined(ESP8266) || defined(ESP32)
  TFT_CONV myGLCD;
+#ifdef Enable_Bluetooth
+  BluetoothSerial SerialBT;
+#endif
+ RTC_DS1307 DS1307_RTC;
+#ifdef Enable_WiFi
+ AsyncWebServer server(80);
+#endif
 #endif
 
 #include "SddPicture.h"
@@ -66,6 +83,9 @@ boolean RetGr;
 int Pr_Line_M[10][4];
 
 #if defined(ESP8266) || defined(ESP32)
+#ifdef Enable_WiFi
+  String IPlocal;
+#endif
 hw_timer_t *Timer0_Cfg = NULL;
 
 void IRAM_ATTR Timer0_ISR()
@@ -537,7 +557,10 @@ byte Pid2(double temp, double ust, byte kP, byte kI, byte kd)   { // низ
   integra2 = (integra2 < i_min) ? i_min : (integra2 > i_max) ? i_max : integra2 + (kI * e2) / 1000.0; //И составляющая
   d2 = kd * (e2 - ed); //Д составляющая
   ed = e2;
-  out = (p2 + integra2 + d2 < u.Profili.min_pwr_BOTTOM) ? u.Profili.min_pwr_BOTTOM : (p2 + integra2 + d2 > bottomMaxPwr) ? bottomMaxPwr : p2 + integra2 + d2;
+  out = (p2 + integra2 + d2 < u.Profili.min_pwr_BOTTOM) 
+  ? u.Profili.min_pwr_BOTTOM 
+  : (p2 + integra2 + d2 > bottomMaxPwr) 
+  ? bottomMaxPwr : p2 + integra2 + d2;
   return out;
 }
 // --------------------------------------------
@@ -602,6 +625,9 @@ void GlabPrint() {                  // главный экран
   myGLCD.print(F("`"), 460, 95);
   myGLCD.print(F("`/с"), 432, 75);
   myGLCD.print(F("v10_2"), 304, 256);
+  #ifdef Enable_WiFi
+    myGLCD.print(&IPlocal[0], 100, 256);
+  #endif
   myGLCD.setColor(VGA_ORAN);
   if (ArObsi[4] != 0) {
     myGLCD.print(F("`"), 460, 115);
@@ -796,9 +822,15 @@ void In_Line(int t_start) {         //  рисуем профиль на гра�
 }
 // --------------------------------------------
 void Sec_metr() {
+  #if defined(__AVR__)
   RTC.read(tm);
   if (OldSek != tm.Second) {
     OldSek = tm.Second;
+  #elif defined(ESP8266) || defined(ESP32)
+  tm = DS1307_RTC.now();
+  if (OldSek != tm.second()) {
+    OldSek = tm.second();
+  #endif  
     ss++;
     if (ss == 60) {
       ss = 0;
@@ -1192,10 +1224,10 @@ bool KnTouchGet(byte n) {
 
 // --------------------------------------------
 void setup() {
-  #if defined(ESP8266) || defined(ESP32)
-     #define EEPROM_SIZE 2048
-    EEPROM.begin(EEPROM_SIZE);
-  #endif
+#if defined(ESP8266) || defined(ESP32)
+  #define EEPROM_SIZE 2048
+  EEPROM.begin(EEPROM_SIZE);
+#endif
 
   myGLCD.InitLCD();
   myGLCD.clrScr();
@@ -1203,8 +1235,46 @@ void setup() {
   myGLCD.setFontAlt(BFontRu);
   Serial.begin(115200);
 
+#if defined(ESP8266) || defined(ESP32)
+
+  #ifdef Enable_Bluetooth
+    if (!SerialBT.begin("ESP32_ReflowStation")) {
+      Serial.println("An error occurred initializing Bluetooth");
+    }
+    else {
+      Serial.println("Bluetooth initialized");
+    }
+  #endif
+
+  #ifdef Enable_WiFi
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("");
+    Serial.print("Connected to ");
+    Serial.println(ssid);
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    IPAddress ip = WiFi.localIP();
+    IPlocal = ip.toString();
+    myGLCD.print(&IPlocal[0], 100, 256);
+
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "Hi! I am ESP32_ReflowStation.");
+    });
+      
+    AsyncElegantOTA.begin(&server);
+    server.begin();
+  #endif
+#endif
+
 #ifdef SetTouch1
   SetPinTouch1();
+
     switch (Orientation) {      // adjust for different aspects
     case 0:   break;          //no change,  calibrated for PORTRAIT
     case 1:   tmp = TS_LEFT, TS_LEFT = TS_BOT, TS_BOT = TS_RT, TS_RT = TS_TOP, TS_TOP = tmp;  break;
@@ -1311,9 +1381,35 @@ void setup() {
     timerAlarmEnable(Timer0_Cfg);
   #endif  
 #endif
+
+#if defined(ESP8266) || defined(ESP32)
+if (!DS1307_RTC.begin()) {
+     #ifdef Debug
+       Serial.println("Couldn't find RTC");
+     #endif  
+    while(1);
+  }
+  else
+     #ifdef Debug
+       Serial.println("Init RTC Ok");
+     #endif
+
+  if (! DS1307_RTC.isrunning()) {
+    #ifdef Debug
+      Serial.println("RTC is NOT running, let's set the time!");
+    #endif  
+    DS1307_RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+#endif
+
 } // end  setup
 // ------------------------------------------------------
 void loop() {
+#if defined(ESP8266) || defined(ESP32)
+#ifdef Enable_WiFi
+  AsyncElegantOTA.loop();
+#endif
+#endif  
 #ifdef SetAnalogBatton
   int analog = analogRead(Knopki);
     myButtUp.tick(analog < SetUP+Debion && analog > SetUP-Debion); 
@@ -1726,6 +1822,12 @@ void loop() {
           kluch = 0;
           sprintf (buf, "OK%03d%03d%03d%03d%03d\r\n", (Output1), (Output2), tc1, tc2, (1)); // profileName
           Serial.print(buf);
+        #ifdef Enable_Bluetooth
+          sprintf (buf2, "$%03d %03d %03d %03d %03d %03d %03d;", (Output1), (Output2), tc1, tc2, (int)(p2), (int)(integra2), (int)(d2));
+          if (SerialBT.available()) {
+            SerialBT.print(buf2);
+          }
+        #endif 
         }
         kluch++;
 #endif
@@ -2174,6 +2276,12 @@ void loop() {
         #ifdef SetConnectPC
                       sprintf (buf, "OK%03d%03d%03d%03d%03d\r\n", int(Output1), int(Output2), tc1, tc2, int(profileName)); // график ПК
                       Serial.print(buf);
+                      #ifdef Enable_Bluetooth
+                        sprintf (buf2, "$%03d %03d %03d %03d %03d %03d %03d;", (Output1), (Output2), tc1, tc2, (int)(p2), (int)(integra2), (int)(d2));
+                        if (SerialBT.available()) {
+                          SerialBT.print(buf2);
+                        }
+                      #endif 
         #endif
                     }
                     if (kluch == 3) {      // работа защиты от отвала термопары 
@@ -2193,7 +2301,7 @@ void loop() {
             if (millis() - BotStartTime < 3000) Output2 = 5; // первые 3 сек мощность низа =5%
               else  Output2 = Pid2(Input2, bottomTemp, u.Profili.kp2, u.Profili.ki2, u.Profili.kd2);
             if (TopStart) Output1 = Pid1(Input1, topTemp, u.Profili.kp1, u.Profili.ki1, u.Profili.kd1);
-          
+
         }
       }
       break;
