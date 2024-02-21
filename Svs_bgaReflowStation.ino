@@ -1384,10 +1384,10 @@ void setup() {
 
 #if defined(ESP8266) || defined(ESP32)
 if (!DS1307_RTC.begin()) {
+	 NoClock = true;
      #ifdef Debug
        Serial.println("Couldn't find RTC");
      #endif  
-    while(1);
   }
   else
      #ifdef Debug
